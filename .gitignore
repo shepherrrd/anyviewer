@@ -148,3 +148,5 @@ src-tauri/Cargo.lock
 # Config files with secrets
 config/local.toml
 config/production.toml
+anyviewer-complete-guide.html
+remote_desktop_technology_guide.html
