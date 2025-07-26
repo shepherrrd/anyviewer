@@ -162,6 +162,39 @@ impl ConnectionRequestManager {
         }
     }
 
+    pub async fn handle_incoming_discovery_request(
+        &self,
+        request_data: crate::network::discovery::ConnectionRequestData,
+    ) -> Result<()> {
+        let now = SystemTime::now();
+
+        let request = IncomingConnectionRequest {
+            request_id: request_data.request_id.clone(),
+            requester_device_id: request_data.requester_device_id,
+            requester_name: request_data.requester_name.clone(),
+            requester_ip: request_data.requester_ip,
+            requested_permissions: request_data.requested_permissions,
+            message: request_data.message,
+            timestamp: now,
+        };
+
+        let pending_request = PendingRequest {
+            request: request.clone(),
+            expires_at: now + self.request_timeout,
+        };
+
+        // Store the pending request
+        self.pending_requests.write().await.insert(request_data.request_id.clone(), pending_request);
+
+        // Notify UI about new request
+        if let Err(e) = self.request_updates_tx.send(request) {
+            warn!("Failed to send request update: {}", e);
+        }
+
+        info!("Handled incoming connection request {} from {}", request_data.request_id, request_data.requester_name);
+        Ok(())
+    }
+
     async fn run_cleanup_task(pending_requests: Arc<RwLock<HashMap<String, PendingRequest>>>) {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
 

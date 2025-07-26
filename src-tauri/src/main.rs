@@ -131,7 +131,8 @@ async fn initialize_security() -> Result<String, String> {
 async fn initialize_connection_requests() -> Result<(), String> {
     info!("Initializing connection request manager");
     
-    let mut network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let mut network_manager = manager.lock().await;
     let (_request_rx, _response_rx) = network_manager.initialize_connection_requests().await.map_err(|e| e.to_string())?;
     
     info!("Connection request manager initialized");
@@ -148,7 +149,8 @@ async fn create_connection_request(
 ) -> Result<String, String> {
     info!("Creating connection request from {}", requester_name);
     
-    let network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
     let request_id = network_manager
         .create_connection_request(
             requester_device_id,
@@ -173,7 +175,8 @@ async fn respond_to_connection_request(
 ) -> Result<(), String> {
     info!("Responding to connection request {}: accepted={}", request_id, accepted);
     
-    let network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
     network_manager
         .respond_to_connection_request(
             request_id,
@@ -190,7 +193,8 @@ async fn respond_to_connection_request(
 
 #[tauri::command]
 async fn get_pending_connection_requests() -> Result<Vec<IncomingConnectionRequest>, String> {
-    let network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
     let requests = network_manager.get_pending_connection_requests().await;
     
     Ok(requests)
@@ -200,7 +204,8 @@ async fn get_pending_connection_requests() -> Result<Vec<IncomingConnectionReque
 async fn cancel_connection_request(request_id: String) -> Result<(), String> {
     info!("Cancelling connection request: {}", request_id);
     
-    let network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
     network_manager.cancel_connection_request(&request_id).await.map_err(|e| e.to_string())?;
     
     Ok(())
@@ -288,6 +293,33 @@ async fn connect_to_ip(ip_address: String, port: Option<String>) -> Result<Conne
 
     info!("Successfully connected to IP: {}", full_address);
     Ok(response)
+}
+
+#[tauri::command]
+async fn send_connection_request_to_device(
+    device_id: String,
+    requester_name: String,
+    requester_ip: String,
+    requested_permissions: Vec<String>,
+    message: Option<String>,
+) -> Result<String, String> {
+    info!("Sending connection request to device: {}", device_id);
+    
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
+    
+    let request_id = network_manager
+        .send_connection_request_to_device(
+            &device_id,
+            requester_name,
+            requester_ip,
+            requested_permissions,
+            message,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(request_id)
 }
 
 // New connection manager commands
@@ -1038,6 +1070,7 @@ async fn main() {
             stop_network_discovery,
             get_discovered_devices,
             connect_to_discovered_device,
+            send_connection_request_to_device,
             connect_to_ip,
             initialize_connection_manager,
             start_hosting_with_fallback,

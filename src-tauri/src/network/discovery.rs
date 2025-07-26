@@ -18,6 +18,17 @@ pub struct DiscoveryMessage {
     pub message_type: MessageType,
     pub device_info: DeviceInfo,
     pub timestamp: u64,
+    pub connection_request: Option<ConnectionRequestData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionRequestData {
+    pub request_id: String,
+    pub requester_device_id: String,
+    pub requester_name: String,
+    pub requester_ip: String,
+    pub requested_permissions: Vec<String>,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +36,8 @@ pub enum MessageType {
     Announce,
     Response,
     Goodbye,
+    ConnectionRequest,
+    ConnectionResponse,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +63,7 @@ pub struct NetworkDiscovery {
     discovered_devices: Arc<RwLock<HashMap<String, DiscoveredDevice>>>,
     is_running: Arc<RwLock<bool>>,
     device_updates_tx: mpsc::UnboundedSender<Vec<DiscoveredDevice>>,
+    connection_request_tx: Option<mpsc::UnboundedSender<ConnectionRequestData>>,
 }
 
 impl NetworkDiscovery {
@@ -77,7 +91,13 @@ impl NetworkDiscovery {
             discovered_devices: Arc::new(RwLock::new(HashMap::new())),
             is_running: Arc::new(RwLock::new(false)),
             device_updates_tx,
+            connection_request_tx: None,
         }
+    }
+
+    pub fn with_connection_request_sender(mut self, sender: mpsc::UnboundedSender<ConnectionRequestData>) -> Self {
+        self.connection_request_tx = Some(sender);
+        self
     }
 
     pub async fn start(&self) -> Result<()> {
@@ -94,9 +114,10 @@ impl NetworkDiscovery {
         let discovered_devices = self.discovered_devices.clone();
         let device_info = self.device_info.clone();
         let is_running_clone = self.is_running.clone();
+        let connection_request_tx = self.connection_request_tx.clone();
         
         tokio::spawn(async move {
-            if let Err(e) = Self::run_udp_listener(discovered_devices, device_info, is_running_clone).await {
+            if let Err(e) = Self::run_udp_listener(discovered_devices, device_info, is_running_clone, connection_request_tx).await {
                 error!("UDP listener error: {}", e);
             }
         });
@@ -142,6 +163,7 @@ impl NetworkDiscovery {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            connection_request: None,
         };
 
         if let Err(e) = Self::send_broadcast(&goodbye_message).await {
@@ -156,13 +178,66 @@ impl NetworkDiscovery {
         self.discovered_devices.read().await.values().cloned().collect()
     }
 
+    pub async fn send_connection_request(
+        &self,
+        target_device_id: &str,
+        request_data: ConnectionRequestData,
+    ) -> Result<()> {
+        let devices = self.discovered_devices.read().await;
+        if let Some(target_device) = devices.values().find(|d| d.info.device_id == target_device_id) {
+            let request_message = DiscoveryMessage {
+                message_type: MessageType::ConnectionRequest,
+                device_info: self.device_info.clone(),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                connection_request: Some(request_data),
+            };
+
+            Self::send_to_address(&request_message, target_device.address).await?;
+            info!("Sent connection request to device: {}", target_device.info.device_name);
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Target device not found: {}", target_device_id))
+        }
+    }
+
     async fn run_udp_listener(
         discovered_devices: Arc<RwLock<HashMap<String, DiscoveredDevice>>>,
         device_info: DeviceInfo,
         is_running: Arc<RwLock<bool>>,
+        connection_request_tx: Option<mpsc::UnboundedSender<ConnectionRequestData>>,
     ) -> Result<()> {
         info!("Attempting to bind UDP socket to 0.0.0.0:{}", DISCOVERY_PORT);
-        let socket = UdpSocket::bind(format!("0.0.0.0:{}", DISCOVERY_PORT))?;
+        
+        let socket = std::net::UdpSocket::bind(format!("0.0.0.0:{}", DISCOVERY_PORT))?;
+        
+        // Set socket options for better cross-platform compatibility
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            let fd = socket.as_raw_fd();
+            unsafe {
+                let optval: libc::c_int = 1;
+                libc::setsockopt(
+                    fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_REUSEADDR,
+                    &optval as *const _ as *const libc::c_void,
+                    std::mem::size_of_val(&optval) as libc::socklen_t,
+                );
+                #[cfg(target_os = "macos")]
+                libc::setsockopt(
+                    fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_REUSEPORT,
+                    &optval as *const _ as *const libc::c_void,
+                    std::mem::size_of_val(&optval) as libc::socklen_t,
+                );
+            }
+        }
+        
         socket.set_broadcast(true)?;
         socket.set_nonblocking(true)?;
         info!("UDP socket bound successfully, starting discovery listener for device: {}", device_info.device_name);
@@ -195,6 +270,7 @@ impl NetworkDiscovery {
                                             .duration_since(UNIX_EPOCH)
                                             .unwrap_or_default()
                                             .as_secs(),
+                                        connection_request: None,
                                     };
 
                                     if let Err(e) = Self::send_to_address(&response, addr).await {
@@ -211,6 +287,28 @@ impl NetworkDiscovery {
                                     
                                     // Add to discovered devices
                                     Self::add_discovered_device(&discovered_devices, message, addr).await;
+                                }
+                                MessageType::ConnectionRequest => {
+                                    info!("Received connection request from device: {}", message.device_info.device_name);
+                                    
+                                    if let Some(request_data) = message.connection_request {
+                                        info!("Connection request details: {:?}", request_data);
+                                        
+                                        // Forward the connection request to the connection request manager
+                                        if let Some(ref tx) = connection_request_tx {
+                                            if let Err(e) = tx.send(request_data) {
+                                                error!("Failed to forward connection request: {}", e);
+                                            } else {
+                                                info!("Successfully forwarded connection request to manager");
+                                            }
+                                        } else {
+                                            warn!("Connection request received but no handler configured");
+                                        }
+                                    }
+                                }
+                                MessageType::ConnectionResponse => {
+                                    info!("Received connection response from device: {}", message.device_info.device_name);
+                                    // TODO: Handle connection response
                                 }
                                 MessageType::Goodbye => {
                                     // Remove from discovered devices
@@ -251,6 +349,7 @@ impl NetworkDiscovery {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
+                connection_request: None,
             };
 
             if let Err(e) = Self::send_broadcast(&announce_message).await {

@@ -188,12 +188,32 @@ impl NetworkManager {
 
         let (device_updates_tx, device_updates_rx) = mpsc::unbounded_channel();
         
-        let discovery = Arc::new(NetworkDiscovery::new(
+        let discovery = NetworkDiscovery::new(
             device_name,
             server_port,
             device_updates_tx,
-        ));
+        );
 
+        // Set up bridge to connection request manager if it exists
+        let discovery = if let Some(ref connection_requests) = self.connection_requests {
+            let (discovery_request_tx, mut discovery_request_rx) = mpsc::unbounded_channel();
+            let discovery = discovery.with_connection_request_sender(discovery_request_tx);
+
+            // Start a task to bridge discovery requests to the connection request manager
+            let connection_requests_clone = connection_requests.clone();
+            tokio::spawn(async move {
+                while let Some(request_data) = discovery_request_rx.recv().await {
+                    if let Err(e) = connection_requests_clone.handle_incoming_discovery_request(request_data).await {
+                        error!("Failed to handle incoming discovery request: {}", e);
+                    }
+                }
+            });
+            discovery
+        } else {
+            discovery
+        };
+
+        let discovery = Arc::new(discovery);
         discovery.start().await?;
         self.discovery = Some(discovery);
 
@@ -215,6 +235,32 @@ impl NetworkManager {
             discovery.get_discovered_devices().await
         } else {
             Vec::new()
+        }
+    }
+
+    pub async fn send_connection_request_to_device(
+        &self,
+        device_id: &str,
+        requester_name: String,
+        requester_ip: String,
+        requested_permissions: Vec<String>,
+        message: Option<String>,
+    ) -> Result<String> {
+        if let Some(discovery) = &self.discovery {
+            let request_id = Uuid::new_v4().to_string();
+            let request_data = discovery::ConnectionRequestData {
+                request_id: request_id.clone(),
+                requester_device_id: device_id.to_string(),
+                requester_name,
+                requester_ip,
+                requested_permissions,
+                message,
+            };
+
+            discovery.send_connection_request(device_id, request_data).await?;
+            Ok(request_id)
+        } else {
+            Err(anyhow::anyhow!("Discovery service not initialized"))
         }
     }
 

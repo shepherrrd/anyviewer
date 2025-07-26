@@ -165,20 +165,20 @@ export default function Dashboard() {
 
   const connectToDevice = async (deviceId: string) => {
     try {
-      const devices = discoveredDevices.find(d => d.info.device_id === deviceId);
-      if (!devices) return;
+      const device = discoveredDevices.find(d => d.info.device_id === deviceId);
+      if (!device) return;
 
-      // Create a connection request instead of direct connection
-      const requestId = await invoke("create_connection_request", {
-        requesterDeviceId: systemInfo?.hostname || "Unknown Device",
+      // Send connection request to the target device via UDP
+      const requestId = await invoke("send_connection_request_to_device", {
+        deviceId: deviceId,
         requesterName: systemInfo?.hostname || "Unknown Device", 
-        requesterIp: "127.0.0.1", // This should be the actual local IP
+        requesterIp: "192.168.1.100", // This should be the actual local IP
         requestedPermissions: ["screen_capture", "input_forwarding"],
         message: `Connection request from ${systemInfo?.hostname || "Unknown Device"}`,
       }) as string;
 
-      console.log("Connection request sent:", requestId);
-      // TODO: Show connection pending state
+      console.log("Connection request sent to device:", device.info.device_name, "Request ID:", requestId);
+      // TODO: Show connection pending state and wait for response
     } catch (error) {
       console.error("Failed to connect to device:", error);
     }
