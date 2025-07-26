@@ -176,9 +176,10 @@ impl NetworkDiscovery {
                         if let Ok(message) = serde_json::from_str::<DiscoveryMessage>(message_str) {
                             info!("Received discovery message from {}: {:?}", addr, message.message_type);
                             
-                            // Don't process our own messages
-                            if message.device_info.device_id == device_info.device_id {
-                                info!("Ignoring message from self: {}", device_info.device_name);
+                            // Don't process our own messages - check both device ID and IP
+                            if message.device_info.device_id == device_info.device_id || 
+                               message.device_info.ip_address == device_info.ip_address {
+                                info!("Ignoring message from self: {} ({})", device_info.device_name, device_info.ip_address);
                                 continue;
                             }
 
@@ -307,6 +308,12 @@ impl NetworkDiscovery {
         };
 
         let mut devices = discovered_devices.write().await;
+        
+        // Check for duplicate IPs (remove any existing device with same IP but different ID)
+        devices.retain(|_, existing_device| {
+            existing_device.info.ip_address != message.device_info.ip_address
+        });
+
         let is_new = !devices.contains_key(&message.device_info.device_id);
         devices.insert(message.device_info.device_id.clone(), device);
 
@@ -341,8 +348,49 @@ impl NetworkDiscovery {
         // Get the first non-loopback IP address
         use std::net::{IpAddr, Ipv4Addr};
         
+        // Try to get the local IP that can reach external networks
+        match std::process::Command::new("sh")
+            .arg("-c")
+            .arg("route get 1.1.1.1 | grep interface | awk '{print $2}'")
+            .output()
+        {
+            Ok(output) => {
+                if let Ok(interface) = String::from_utf8(output.stdout) {
+                    let interface = interface.trim();
+                    if !interface.is_empty() {
+                        // Try to get IP for this interface
+                        if let Ok(output) = std::process::Command::new("ifconfig")
+                            .arg(interface)
+                            .output()
+                        {
+                            if let Ok(ifconfig_output) = String::from_utf8(output.stdout) {
+                                // Parse IP from ifconfig output
+                                for line in ifconfig_output.lines() {
+                                    if line.contains("inet ") && !line.contains("127.0.0.1") {
+                                        if let Some(ip_start) = line.find("inet ") {
+                                            let ip_part = &line[ip_start + 5..];
+                                            if let Some(ip_end) = ip_part.find(' ') {
+                                                let ip_str = &ip_part[..ip_end];
+                                                if let Ok(ip) = ip_str.parse::<Ipv4Addr>() {
+                                                    if !ip.is_loopback() && !ip.is_link_local() {
+                                                        return Ok(ip.to_string());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        
+        // Fallback to local_ip_address crate
         match local_ip_address::local_ip() {
-            Ok(IpAddr::V4(ip)) if ip != Ipv4Addr::LOCALHOST => Ok(ip.to_string()),
+            Ok(IpAddr::V4(ip)) if ip != Ipv4Addr::LOCALHOST && !ip.is_link_local() => Ok(ip.to_string()),
             _ => Ok("127.0.0.1".to_string()),
         }
     }

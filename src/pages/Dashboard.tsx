@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { Monitor, Wifi, Settings, Activity, Copy, RefreshCw, CheckCircle, Radar, Laptop, Users } from "lucide-react";
 import { Link } from "react-router-dom";
+import ConnectionRequestModal from "../components/ConnectionRequestModal";
 
 interface DiscoveredDevice {
   info: {
@@ -17,6 +18,16 @@ interface DiscoveredDevice {
   address: string;
 }
 
+interface ConnectionRequest {
+  request_id: string;
+  requester_device_id: string;
+  requester_name: string;
+  requester_ip: string;
+  requested_permissions: string[];
+  message?: string;
+  timestamp: number;
+}
+
 export default function Dashboard() {
   const [systemInfo, setSystemInfo] = useState<any>(null);
   const [sessionId, setSessionId] = useState<string>("");
@@ -26,12 +37,30 @@ export default function Dashboard() {
   const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
   const [discoveryActive, setDiscoveryActive] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState<ConnectionRequest | null>(null);
 
   useEffect(() => {
     const loadSystemInfo = async () => {
       try {
         const info = await invoke("get_system_info");
         setSystemInfo(info);
+        
+        // Auto-start discovery after system info is loaded
+        const deviceName = info?.hostname || "Unknown Device";
+        console.log("Auto-starting discovery for device:", deviceName);
+        try {
+          await invoke("start_network_discovery", { deviceName });
+          await invoke("initialize_connection_requests"); // Initialize connection request system
+          setDiscoveryActive(true);
+          startDevicePolling();
+          
+          // Start polling for connection requests
+          const requestInterval = setInterval(checkForConnectionRequests, 2000);
+          
+          console.log("Auto-discovery started successfully");
+        } catch (error) {
+          console.error("Failed to auto-start discovery:", error);
+        }
       } catch (error) {
         console.error("Failed to load system info:", error);
       } finally {
@@ -136,11 +165,43 @@ export default function Dashboard() {
 
   const connectToDevice = async (deviceId: string) => {
     try {
-      const response = await invoke("connect_to_discovered_device", { deviceId });
-      console.log("Connected to device:", response);
-      // Navigate to client session or show success message
+      const devices = discoveredDevices.find(d => d.info.device_id === deviceId);
+      if (!devices) return;
+
+      // Create a connection request instead of direct connection
+      const requestId = await invoke("create_connection_request", {
+        requesterDeviceId: systemInfo?.hostname || "Unknown Device",
+        requesterName: systemInfo?.hostname || "Unknown Device", 
+        requesterIp: "127.0.0.1", // This should be the actual local IP
+        requestedPermissions: ["screen_capture", "input_forwarding"],
+        message: `Connection request from ${systemInfo?.hostname || "Unknown Device"}`,
+      }) as string;
+
+      console.log("Connection request sent:", requestId);
+      // TODO: Show connection pending state
     } catch (error) {
       console.error("Failed to connect to device:", error);
+    }
+  };
+
+  const checkForConnectionRequests = async () => {
+    try {
+      const requests = await invoke("get_pending_connection_requests") as ConnectionRequest[];
+      if (requests.length > 0 && !pendingRequest) {
+        setPendingRequest(requests[0]); // Show the first pending request
+      }
+    } catch (error) {
+      console.error("Failed to check for connection requests:", error);
+    }
+  };
+
+  const handleConnectionResponse = (accepted: boolean) => {
+    setPendingRequest(null);
+    if (accepted) {
+      console.log("Connection request accepted");
+      // TODO: Navigate to host session
+    } else {
+      console.log("Connection request denied");
     }
   };
 
@@ -446,6 +507,15 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+
+      {/* Connection Request Modal */}
+      {pendingRequest && (
+        <ConnectionRequestModal
+          request={pendingRequest}
+          onClose={() => setPendingRequest(null)}
+          onResponse={handleConnectionResponse}
+        />
+      )}
     </div>
   );
 }
