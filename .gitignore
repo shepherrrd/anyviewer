@@ -1,0 +1,150 @@
+# Rust
+/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Tauri
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/gen/
+
+# Node.js / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.yarn/
+.npm/
+.vscode/
+*.tsbuildinfo
+
+# Build outputs
+dist/
+build/
+out/
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Temporary files
+tmp/
+temp/
+
+# Cache
+.cache/
+.parcel-cache/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# ESLint cache
+.eslintcache
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.test
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# next.js build output
+.next
+
+# nuxt.js build output
+.nuxt
+
+# rollup.js default build output
+dist/
+
+# Uncomment the public line in if your project uses Gatsby
+# https://nextjs.org/blog/next-9-1#public-directory-support
+# public
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# Local History for Visual Studio Code
+.history/
+
+# Tauri specific
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Bundle artifacts
+*.dmg
+*.msi
+*.AppImage
+*.deb
+*.exe
+
+# Development database
+*.db
+*.sqlite
+*.sqlite3
+
+# Config files with secrets
+config/local.toml
+config/production.toml
