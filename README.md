@@ -14,6 +14,7 @@ A modern, secure, and high-performance remote desktop application built with Rus
 ## Architecture
 
 ### Backend (Rust)
+
 - **Screen Capture**: Cross-platform screen capture with hardware acceleration
 - **Video Codec**: Supports JPEG, PNG, and H.264 encoding
 - **Network Layer**: WebSocket-based communication with relay server support
@@ -21,6 +22,7 @@ A modern, secure, and high-performance remote desktop application built with Rus
 - **Security**: RSA key exchange and AES-256 session encryption
 
 ### Frontend (React + TypeScript)
+
 - **Modern UI**: Clean, responsive interface built with React
 - **Real-time Updates**: Live connection status and performance metrics
 - **Settings Management**: Comprehensive configuration options
@@ -37,17 +39,20 @@ A modern, secure, and high-performance remote desktop application built with Rus
 ### Installation
 
 1. Clone the repository:
+
 ```bash
-git clone <repository-url>
+git clone https://github.com/shepherrrd/anyviewer.git
 cd AnyViewer
 ```
 
 2. Install frontend dependencies:
+
 ```bash
 npm install
 ```
 
 3. Install Rust dependencies:
+
 ```bash
 cargo fetch
 ```
@@ -55,6 +60,7 @@ cargo fetch
 ### Development
 
 1. Start the development server:
+
 ```bash
 npm run tauri dev
 ```
@@ -64,6 +70,7 @@ This will start both the Vite dev server for the frontend and compile the Rust b
 ### Building
 
 1. Build for production:
+
 ```bash
 npm run tauri build
 ```
@@ -165,24 +172,13 @@ npm run lint
 # Run type checking
 npm run type-check
 
-# Install Tauri CLI
-cargo install tauri-cli
 ```
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the AnyViewer Personal Use License - see the LICENSE file for details.
 
-## Roadmap
-
-- [ ] File transfer support
-- [ ] Multi-monitor support
-- [ ] Mobile app support
-- [ ] Hardware acceleration
-- [ ] Cloud relay servers
-- [ ] Audio forwarding
-- [ ] Recording functionality
-- [ ] Plugin system
+**Important**: This software is for personal and non-commercial use only. Commercial use, redistribution for profit, or creating proprietary software based on this code is prohibited. For commercial licensing inquiries, please contact the repository owner.
 
 ## Support
 

@@ -3,10 +3,10 @@ name = "anyviewer"
 version = "0.1.0"
 description = "A modern remote desktop application "
 authors = ["Shepherd Umanah"]
-license = "MIT"
+license-file = "LICENSE"
 repository = "https://github.com/shepherrrd/anyviewer"
 default-run = "anyviewer"
-edition = "2025"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
