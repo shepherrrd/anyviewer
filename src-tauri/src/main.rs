@@ -18,7 +18,7 @@ mod metrics;
 mod testing;
 
 use capture::ScreenCaptureManager;
-use network::{NetworkManager, ConnectionRequest, ConnectionResponse};
+use network::{NetworkManager, ConnectionRequest as NetworkConnectionRequest, ConnectionResponse, DiscoveredDevice, IncomingConnectionRequest};
 use network::connection_manager::{ConnectionManager, ConnectionConfig, ConnectionStatus, ConnectionType};
 use input::InputManager;
 use security::SecurityManager;
@@ -52,7 +52,7 @@ async fn connect_to_session(session_id: String) -> Result<ConnectionResponse, St
     info!("Connecting to session: {}", session_id);
     
     let network_manager = NetworkManager::new();
-    let request = ConnectionRequest { session_id: session_id.clone() };
+    let request = NetworkConnectionRequest { session_id: session_id.clone() };
     
     let response = network_manager.connect_to_host(request).await.map_err(|e| e.to_string())?;
     
@@ -112,6 +112,127 @@ async fn initialize_security() -> Result<String, String> {
     let public_key = security_manager.get_public_key().map_err(|e| e.to_string())?;
     
     Ok(public_key)
+}
+
+// Connection request commands
+#[tauri::command]
+async fn initialize_connection_requests() -> Result<(), String> {
+    info!("Initializing connection request manager");
+    
+    let mut network_manager = NetworkManager::new();
+    let (_request_rx, _response_rx) = network_manager.initialize_connection_requests().await.map_err(|e| e.to_string())?;
+    
+    info!("Connection request manager initialized");
+    Ok(())
+}
+
+#[tauri::command]
+async fn create_connection_request(
+    requester_device_id: String,
+    requester_name: String,
+    requester_ip: String,
+    requested_permissions: Vec<String>,
+    message: Option<String>,
+) -> Result<String, String> {
+    info!("Creating connection request from {}", requester_name);
+    
+    let network_manager = NetworkManager::new();
+    let request_id = network_manager
+        .create_connection_request(
+            requester_device_id,
+            requester_name,
+            requester_ip,
+            requested_permissions,
+            message,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(request_id)
+}
+
+#[tauri::command]
+async fn respond_to_connection_request(
+    request_id: String,
+    accepted: bool,
+    granted_permissions: Vec<String>,
+    session_duration_minutes: Option<u32>,
+    denial_reason: Option<String>,
+) -> Result<(), String> {
+    info!("Responding to connection request {}: accepted={}", request_id, accepted);
+    
+    let network_manager = NetworkManager::new();
+    network_manager
+        .respond_to_connection_request(
+            request_id,
+            accepted,
+            granted_permissions,
+            session_duration_minutes,
+            denial_reason,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_pending_connection_requests() -> Result<Vec<IncomingConnectionRequest>, String> {
+    let network_manager = NetworkManager::new();
+    let requests = network_manager.get_pending_connection_requests().await;
+    
+    Ok(requests)
+}
+
+#[tauri::command]
+async fn cancel_connection_request(request_id: String) -> Result<(), String> {
+    info!("Cancelling connection request: {}", request_id);
+    
+    let network_manager = NetworkManager::new();
+    network_manager.cancel_connection_request(&request_id).await.map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+// Network discovery commands
+#[tauri::command]
+async fn start_network_discovery(device_name: String) -> Result<(), String> {
+    info!("Starting network discovery with device name: {}", device_name);
+    
+    let mut network_manager = NetworkManager::new();
+    let _device_updates_rx = network_manager.start_discovery(device_name).await.map_err(|e| e.to_string())?;
+    
+    info!("Network discovery started");
+    Ok(())
+}
+
+#[tauri::command]
+async fn stop_network_discovery() -> Result<(), String> {
+    info!("Stopping network discovery");
+    
+    let mut network_manager = NetworkManager::new();
+    network_manager.stop_discovery().await.map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_discovered_devices() -> Result<Vec<DiscoveredDevice>, String> {
+    let network_manager = NetworkManager::new();
+    let devices = network_manager.get_discovered_devices().await;
+    
+    Ok(devices)
+}
+
+#[tauri::command]
+async fn connect_to_discovered_device(device_id: String) -> Result<ConnectionResponse, String> {
+    info!("Connecting to discovered device: {}", device_id);
+    
+    let network_manager = NetworkManager::new();
+    let response = network_manager.connect_to_discovered_device(&device_id).await.map_err(|e| e.to_string())?;
+    
+    info!("Successfully connected to discovered device: {}", device_id);
+    Ok(response)
 }
 
 // New connection manager commands
@@ -853,6 +974,15 @@ async fn main() {
             get_system_info,
             generate_session_id,
             initialize_security,
+            initialize_connection_requests,
+            create_connection_request,
+            respond_to_connection_request,
+            get_pending_connection_requests,
+            cancel_connection_request,
+            start_network_discovery,
+            stop_network_discovery,
+            get_discovered_devices,
+            connect_to_discovered_device,
             initialize_connection_manager,
             start_hosting_with_fallback,
             connect_to_host_with_fallback,

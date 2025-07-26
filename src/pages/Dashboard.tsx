@@ -1,7 +1,21 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { Monitor, Wifi, Settings, Activity, Copy, RefreshCw, CheckCircle } from "lucide-react";
+import { Monitor, Wifi, Settings, Activity, Copy, RefreshCw, CheckCircle, Radar, Laptop, Users } from "lucide-react";
 import { Link } from "react-router-dom";
+
+interface DiscoveredDevice {
+  info: {
+    device_id: string;
+    device_name: string;
+    device_type: string;
+    version: string;
+    capabilities: string[];
+    server_port: number;
+    ip_address: string;
+  };
+  last_seen: string;
+  address: string;
+}
 
 export default function Dashboard() {
   const [systemInfo, setSystemInfo] = useState<any>(null);
@@ -9,6 +23,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [generatingId, setGeneratingId] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
+  const [discoveryActive, setDiscoveryActive] = useState(false);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
 
   useEffect(() => {
     const loadSystemInfo = async () => {
@@ -68,6 +85,69 @@ export default function Dashboard() {
       setGeneratingId(false);
     }
   };
+
+  const startDiscovery = async () => {
+    try {
+      setDiscoveryLoading(true);
+      const deviceName = systemInfo?.hostname || "Unknown Device";
+      await invoke("start_network_discovery", { deviceName });
+      setDiscoveryActive(true);
+      
+      // Start polling for devices
+      startDevicePolling();
+    } catch (error) {
+      console.error("Failed to start discovery:", error);
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  };
+
+  const stopDiscovery = async () => {
+    try {
+      setDiscoveryLoading(true);
+      await invoke("stop_network_discovery");
+      setDiscoveryActive(false);
+      setDiscoveredDevices([]);
+    } catch (error) {
+      console.error("Failed to stop discovery:", error);
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  };
+
+  const refreshDevices = async () => {
+    if (!discoveryActive) return;
+    
+    try {
+      const devices = await invoke("get_discovered_devices") as DiscoveredDevice[];
+      setDiscoveredDevices(devices);
+    } catch (error) {
+      console.error("Failed to get discovered devices:", error);
+    }
+  };
+
+  const startDevicePolling = () => {
+    const interval = setInterval(refreshDevices, 2000);
+    return () => clearInterval(interval);
+  };
+
+  const connectToDevice = async (deviceId: string) => {
+    try {
+      const response = await invoke("connect_to_discovered_device", { deviceId });
+      console.log("Connected to device:", response);
+      // Navigate to client session or show success message
+    } catch (error) {
+      console.error("Failed to connect to device:", error);
+    }
+  };
+
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    if (discoveryActive) {
+      cleanup = startDevicePolling();
+    }
+    return cleanup;
+  }, [discoveryActive]);
 
   if (loading) {
     return (
@@ -138,6 +218,95 @@ export default function Dashboard() {
         
         <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center">
           This ID is automatically generated when AnyViewer starts and allows others to connect to your computer.
+        </div>
+      </div>
+
+      {/* Network Discovery */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+              <Radar className="w-5 h-5 mr-2" />
+              Network Discovery
+            </h2>
+            <button
+              onClick={discoveryActive ? stopDiscovery : startDiscovery}
+              disabled={discoveryLoading}
+              className={`btn-sm ${discoveryActive ? 'btn-secondary' : 'btn-primary'} flex items-center`}
+            >
+              {discoveryLoading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  {discoveryActive ? 'Stopping...' : 'Starting...'}
+                </>
+              ) : (
+                <>
+                  <Radar className={`w-4 h-4 mr-2 ${discoveryActive ? 'animate-pulse' : ''}`} />
+                  {discoveryActive ? 'Stop Discovery' : 'Start Discovery'}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-6">
+          {!discoveryActive ? (
+            <div className="text-center py-8">
+              <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
+                Start network discovery to find devices on your local network
+              </p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                Devices running AnyViewer will automatically appear here
+              </p>
+            </div>
+          ) : discoveredDevices.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
+              <p className="text-gray-500 dark:text-gray-400">
+                Searching for devices on your network...
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {discoveredDevices.map((device) => (
+                <div
+                  key={device.info.device_id}
+                  className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900 rounded-lg flex items-center justify-center mr-3">
+                      <Laptop className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white">
+                        {device.info.device_name}
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {device.info.ip_address} • {device.info.device_type} v{device.info.version}
+                      </p>
+                      <div className="flex items-center space-x-2 mt-1">
+                        {device.info.capabilities.map((capability) => (
+                          <span
+                            key={capability}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
+                          >
+                            {capability.replace('_', ' ')}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => connectToDevice(device.info.device_id)}
+                    className="btn-primary btn-sm"
+                  >
+                    Connect
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
