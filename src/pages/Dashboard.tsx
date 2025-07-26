@@ -90,11 +90,13 @@ export default function Dashboard() {
     try {
       setDiscoveryLoading(true);
       const deviceName = systemInfo?.hostname || "Unknown Device";
+      console.log("Starting discovery for device:", deviceName);
       await invoke("start_network_discovery", { deviceName });
       setDiscoveryActive(true);
       
       // Start polling for devices
       startDevicePolling();
+      console.log("Discovery started successfully");
     } catch (error) {
       console.error("Failed to start discovery:", error);
     } finally {
@@ -120,6 +122,7 @@ export default function Dashboard() {
     
     try {
       const devices = await invoke("get_discovered_devices") as DiscoveredDevice[];
+      console.log("Refreshed devices:", devices);
       setDiscoveredDevices(devices);
     } catch (error) {
       console.error("Failed to get discovered devices:", error);

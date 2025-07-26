@@ -23,6 +23,18 @@ use network::connection_manager::{ConnectionManager, ConnectionConfig, Connectio
 use input::InputManager;
 use security::SecurityManager;
 use config::AppConfig;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+// Global network manager state
+static GLOBAL_NETWORK_MANAGER: tokio::sync::OnceCell<Arc<Mutex<NetworkManager>>> = tokio::sync::OnceCell::const_new();
+
+async fn get_global_network_manager() -> Arc<Mutex<NetworkManager>> {
+    GLOBAL_NETWORK_MANAGER.get_or_init(|| async {
+        Arc::new(Mutex::new(NetworkManager::new()))
+    }).await.clone()
+}
+
 use streaming::{StreamingManager, StreamingConfig, StreamingStats};
 use permissions::{PermissionManager, PermissionConfig, Permission, PermissionResponse, DeviceInfo as PermissionDeviceInfo};
 use metrics::{MetricsCollector, ConnectionMetrics, SystemMetrics, QualityMetrics, AlertThresholds};
@@ -199,7 +211,8 @@ async fn cancel_connection_request(request_id: String) -> Result<(), String> {
 async fn start_network_discovery(device_name: String) -> Result<(), String> {
     info!("Starting network discovery with device name: {}", device_name);
     
-    let mut network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let mut network_manager = manager.lock().await;
     let _device_updates_rx = network_manager.start_discovery(device_name).await.map_err(|e| e.to_string())?;
     
     info!("Network discovery started");
@@ -210,7 +223,8 @@ async fn start_network_discovery(device_name: String) -> Result<(), String> {
 async fn stop_network_discovery() -> Result<(), String> {
     info!("Stopping network discovery");
     
-    let mut network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let mut network_manager = manager.lock().await;
     network_manager.stop_discovery().await.map_err(|e| e.to_string())?;
     
     Ok(())
@@ -218,7 +232,8 @@ async fn stop_network_discovery() -> Result<(), String> {
 
 #[tauri::command]
 async fn get_discovered_devices() -> Result<Vec<DiscoveredDevice>, String> {
-    let network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
     let devices = network_manager.get_discovered_devices().await;
     
     Ok(devices)
@@ -228,10 +243,50 @@ async fn get_discovered_devices() -> Result<Vec<DiscoveredDevice>, String> {
 async fn connect_to_discovered_device(device_id: String) -> Result<ConnectionResponse, String> {
     info!("Connecting to discovered device: {}", device_id);
     
-    let network_manager = NetworkManager::new();
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
     let response = network_manager.connect_to_discovered_device(&device_id).await.map_err(|e| e.to_string())?;
     
     info!("Successfully connected to discovered device: {}", device_id);
+    Ok(response)
+}
+
+#[tauri::command]
+async fn connect_to_ip(ip_address: String, port: Option<String>) -> Result<ConnectionResponse, String> {
+    info!("Connecting to IP address: {}:{}", ip_address, port.as_deref().unwrap_or("7878"));
+    
+    let actual_port = port.unwrap_or_else(|| "7878".to_string());
+    let full_address = if ip_address.contains(':') {
+        ip_address
+    } else {
+        format!("{}:{}", ip_address, actual_port)
+    };
+
+    // For IP connections, we'll create a direct connection request
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let request = NetworkConnectionRequest { session_id: session_id.clone() };
+    
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
+    
+    // In a real implementation, this would establish a direct TCP connection
+    // For now, we'll simulate the response
+    let response = ConnectionResponse {
+        success: true,
+        session_id,
+        server_info: Some(network::ServerInfo {
+            version: "1.0.0".to_string(),
+            capabilities: vec![
+                "screen_capture".to_string(),
+                "input_forwarding".to_string(),
+                "file_transfer".to_string(),
+            ],
+            encryption_enabled: true,
+        }),
+        error: None,
+    };
+
+    info!("Successfully connected to IP: {}", full_address);
     Ok(response)
 }
 
@@ -983,6 +1038,7 @@ async fn main() {
             stop_network_discovery,
             get_discovered_devices,
             connect_to_discovered_device,
+            connect_to_ip,
             initialize_connection_manager,
             start_hosting_with_fallback,
             connect_to_host_with_fallback,

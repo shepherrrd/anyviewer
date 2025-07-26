@@ -88,7 +88,7 @@ impl NetworkDiscovery {
         *is_running = true;
         drop(is_running);
 
-        info!("Starting network discovery service on port {}", DISCOVERY_PORT);
+        info!("Starting network discovery service on port {} for device: {}", DISCOVERY_PORT, self.device_info.device_name);
 
         // Start UDP listener
         let discovered_devices = self.discovered_devices.clone();
@@ -161,9 +161,11 @@ impl NetworkDiscovery {
         device_info: DeviceInfo,
         is_running: Arc<RwLock<bool>>,
     ) -> Result<()> {
+        info!("Attempting to bind UDP socket to 0.0.0.0:{}", DISCOVERY_PORT);
         let socket = UdpSocket::bind(format!("0.0.0.0:{}", DISCOVERY_PORT))?;
         socket.set_broadcast(true)?;
         socket.set_nonblocking(true)?;
+        info!("UDP socket bound successfully, starting discovery listener for device: {}", device_info.device_name);
 
         let mut buffer = [0u8; 1024];
 
@@ -172,13 +174,18 @@ impl NetworkDiscovery {
                 Ok((size, addr)) => {
                     if let Ok(message_str) = std::str::from_utf8(&buffer[..size]) {
                         if let Ok(message) = serde_json::from_str::<DiscoveryMessage>(message_str) {
+                            info!("Received discovery message from {}: {:?}", addr, message.message_type);
+                            
                             // Don't process our own messages
                             if message.device_info.device_id == device_info.device_id {
+                                info!("Ignoring message from self: {}", device_info.device_name);
                                 continue;
                             }
 
                             match message.message_type {
                                 MessageType::Announce => {
+                                    info!("Processing announcement from device: {}", message.device_info.device_name);
+                                    
                                     // Respond to announcement
                                     let response = DiscoveryMessage {
                                         message_type: MessageType::Response,
@@ -191,12 +198,16 @@ impl NetworkDiscovery {
 
                                     if let Err(e) = Self::send_to_address(&response, addr).await {
                                         warn!("Failed to send response to {}: {}", addr, e);
+                                    } else {
+                                        info!("Sent response to {}", addr);
                                     }
 
                                     // Add to discovered devices
                                     Self::add_discovered_device(&discovered_devices, message, addr).await;
                                 }
                                 MessageType::Response => {
+                                    info!("Processing response from device: {}", message.device_info.device_name);
+                                    
                                     // Add to discovered devices
                                     Self::add_discovered_device(&discovered_devices, message, addr).await;
                                 }
@@ -300,7 +311,10 @@ impl NetworkDiscovery {
         devices.insert(message.device_info.device_id.clone(), device);
 
         if is_new {
-            info!("Discovered new device: {} at {}", message.device_info.device_name, addr);
+            info!("Discovered new device: {} at {} (Total devices: {})", 
+                  message.device_info.device_name, addr, devices.len());
+        } else {
+            info!("Updated existing device: {} at {}", message.device_info.device_name, addr);
         }
     }
 
