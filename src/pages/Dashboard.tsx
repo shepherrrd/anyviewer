@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { Monitor, Wifi, Settings, Activity, Copy, RefreshCw, CheckCircle, Radar, Laptop, Users } from "lucide-react";
+import { Monitor, Wifi, Settings, Activity, Copy, RefreshCw, CheckCircle, Radar, Laptop, Users, Bell, Eye, Clock, User, MapPin } from "lucide-react";
 import { Link } from "react-router-dom";
 import ConnectionRequestModal from "../components/ConnectionRequestModal";
 
@@ -38,6 +38,10 @@ export default function Dashboard() {
   const [discoveryActive, setDiscoveryActive] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [pendingRequest, setPendingRequest] = useState<ConnectionRequest | null>(null);
+  const [incomingRequests, setIncomingRequests] = useState<ConnectionRequest[]>([]);
+  const [showIncomingRequests, setShowIncomingRequests] = useState(false);
+  const [acceptedRequests, setAcceptedRequests] = useState<any[]>([]);
+  const [sharingActive, setSharingActive] = useState(false);
 
   useEffect(() => {
     const loadSystemInfo = async () => {
@@ -49,13 +53,14 @@ export default function Dashboard() {
         const deviceName = info?.hostname || "Unknown Device";
         console.log("Auto-starting discovery for device:", deviceName);
         try {
+          await invoke("initialize_connection_requests"); // Initialize connection request system FIRST
           await invoke("start_network_discovery", { deviceName });
-          await invoke("initialize_connection_requests"); // Initialize connection request system
           setDiscoveryActive(true);
           startDevicePolling();
           
-          // Start polling for connection requests
+          // Start polling for connection requests and accepted requests
           const requestInterval = setInterval(checkForConnectionRequests, 2000);
+          const acceptedInterval = setInterval(checkForAcceptedRequests, 3000);
           
           console.log("Auto-discovery started successfully");
         } catch (error) {
@@ -187,8 +192,16 @@ export default function Dashboard() {
   const checkForConnectionRequests = async () => {
     try {
       const requests = await invoke("get_pending_connection_requests") as ConnectionRequest[];
+      setIncomingRequests(requests);
+      
+      // Show the first pending request in modal if none is currently showing
       if (requests.length > 0 && !pendingRequest) {
-        setPendingRequest(requests[0]); // Show the first pending request
+        setPendingRequest(requests[0]);
+      }
+      
+      // If we have requests, show the incoming requests section
+      if (requests.length > 0) {
+        setShowIncomingRequests(true);
       }
     } catch (error) {
       console.error("Failed to check for connection requests:", error);
@@ -197,11 +210,50 @@ export default function Dashboard() {
 
   const handleConnectionResponse = (accepted: boolean) => {
     setPendingRequest(null);
+    
+    // Remove the handled request from incoming requests
+    setIncomingRequests(prev => prev.filter(req => req.request_id !== pendingRequest?.request_id));
+    
     if (accepted) {
       console.log("Connection request accepted");
       // TODO: Navigate to host session
     } else {
       console.log("Connection request denied");
+    }
+    
+    // Hide incoming requests section if no more requests
+    setTimeout(() => {
+      checkForConnectionRequests();
+    }, 500);
+  };
+
+  const viewConnectionRequest = (request: ConnectionRequest) => {
+    setPendingRequest(request);
+  };
+
+  const checkForAcceptedRequests = async () => {
+    try {
+      const accepted = await invoke("get_accepted_connection_requests") as any[];
+      setAcceptedRequests(accepted);
+      
+      // If we have accepted requests and screen sharing isn't active, start it
+      if (accepted.length > 0 && !sharingActive) {
+        for (const request of accepted) {
+          await startScreenSharingForRequest(request.request_id);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to check for accepted requests:", error);
+    }
+  };
+
+  const startScreenSharingForRequest = async (requestId: string) => {
+    try {
+      await invoke("start_screen_sharing_for_request", { requestId });
+      setSharingActive(true);
+      console.log("Screen sharing started for request:", requestId);
+    } catch (error) {
+      console.error("Failed to start screen sharing:", error);
     }
   };
 
@@ -373,6 +425,109 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Active Screen Sharing Status */}
+      {sharingActive && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-3"></div>
+            <div>
+              <h3 className="text-sm font-medium text-green-800 dark:text-green-200">
+                Screen Sharing Active
+              </h3>
+              <p className="text-sm text-green-600 dark:text-green-400">
+                Your screen is currently being shared with {acceptedRequests.length} connection(s)
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setSharingActive(false);
+                // TODO: Stop screen sharing
+              }}
+              className="ml-auto btn-secondary btn-sm"
+            >
+              Stop Sharing
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Incoming Connection Requests */}
+      {showIncomingRequests && incomingRequests.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+                <Bell className="w-5 h-5 mr-2 text-orange-500" />
+                Incoming Connection Requests
+                <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+                  {incomingRequests.length}
+                </span>
+              </h2>
+              <button
+                onClick={() => setShowIncomingRequests(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+          
+          <div className="p-6">
+            <div className="space-y-3">
+              {incomingRequests.map((request) => (
+                <div
+                  key={request.request_id}
+                  className="flex items-center justify-between p-4 border-2 border-orange-200 dark:border-orange-800 rounded-lg bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors"
+                >
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900 rounded-lg flex items-center justify-center mr-3">
+                      <User className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white">
+                        {request.requester_name}
+                      </h3>
+                      <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
+                        <span className="flex items-center">
+                          <MapPin className="w-3 h-3 mr-1" />
+                          {request.requester_ip}
+                        </span>
+                        <span className="flex items-center">
+                          <Clock className="w-3 h-3 mr-1" />
+                          {new Date(request.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2 mt-1">
+                        {request.requested_permissions.map((permission) => (
+                          <span
+                            key={permission}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-800 dark:text-orange-200"
+                          >
+                            {permission.replace('_', ' ')}
+                          </span>
+                        ))}
+                      </div>
+                      {request.message && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 italic">
+                          "{request.message}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => viewConnectionRequest(request)}
+                    className="btn-primary btn-sm flex items-center"
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    View Request
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

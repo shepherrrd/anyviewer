@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { X, Monitor, Shield, Clock, Wifi } from "lucide-react";
+import { X, Monitor, Shield, Clock, Wifi, Eye, EyeOff } from "lucide-react";
 
 interface ConnectionRequest {
   request_id: string;
@@ -20,6 +20,9 @@ interface ConnectionRequestModalProps {
 
 export default function ConnectionRequestModal({ request, onClose, onResponse }: ConnectionRequestModalProps) {
   const [responding, setResponding] = useState(false);
+  const [screenPreview, setScreenPreview] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   const handleAccept = async () => {
     setResponding(true);
@@ -31,6 +34,19 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
         sessionDurationMinutes: 60, // 1 hour default
         denialReason: null,
       });
+      
+      // Start screen sharing immediately if screen_capture permission is granted
+      if (request.requested_permissions.includes('screen_capture')) {
+        try {
+          await invoke("start_screen_sharing_for_request", {
+            requestId: request.request_id,
+          });
+          console.log("Screen sharing started for accepted request");
+        } catch (error) {
+          console.error("Failed to start screen sharing:", error);
+        }
+      }
+      
       onResponse(true);
     } catch (error) {
       console.error("Failed to accept connection request:", error);
@@ -57,6 +73,38 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
     }
   };
 
+  const captureScreenPreview = async () => {
+    setLoadingPreview(true);
+    try {
+      const screenData = await invoke("capture_screen") as number[];
+      // Convert the array buffer to base64
+      const uint8Array = new Uint8Array(screenData);
+      const blob = new Blob([uint8Array], { type: "image/png" });
+      const url = URL.createObjectURL(blob);
+      setScreenPreview(url);
+    } catch (error) {
+      console.error("Failed to capture screen preview:", error);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const togglePreview = () => {
+    if (!showPreview && !screenPreview) {
+      captureScreenPreview();
+    }
+    setShowPreview(!showPreview);
+  };
+
+  useEffect(() => {
+    return () => {
+      // Cleanup blob URL when component unmounts
+      if (screenPreview) {
+        URL.revokeObjectURL(screenPreview);
+      }
+    };
+  }, [screenPreview]);
+
   const formatPermissions = (permissions: string[]) => {
     const permissionLabels: { [key: string]: { label: string; icon: any } } = {
       screen_capture: { label: "View your screen", icon: Monitor },
@@ -69,7 +117,7 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg mx-4 max-h-screen overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center">
@@ -120,6 +168,56 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
               })}
             </div>
           </div>
+
+          {/* Screen Preview Section */}
+          {request.requested_permissions.includes('screen_capture') && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                  Screen Preview:
+                </h4>
+                <button
+                  onClick={togglePreview}
+                  disabled={loadingPreview}
+                  className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center"
+                >
+                  {loadingPreview ? (
+                    "Loading..."
+                  ) : showPreview ? (
+                    <>
+                      <EyeOff className="w-4 h-4 mr-1" />
+                      Hide Preview
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-4 h-4 mr-1" />
+                      Show Preview
+                    </>
+                  )}
+                </button>
+              </div>
+              
+              {showPreview && (
+                <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                  {screenPreview ? (
+                    <img
+                      src={screenPreview}
+                      alt="Screen preview"
+                      className="w-full h-32 object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-32 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                      <Monitor className="w-8 h-8 text-gray-400" />
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                This shows what the remote user will be able to see
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Actions */}

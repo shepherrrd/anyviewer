@@ -252,9 +252,15 @@ impl NetworkDiscovery {
                             info!("Received discovery message from {}: {:?}", addr, message.message_type);
                             
                             // Don't process our own messages - check both device ID and IP
-                            if message.device_info.device_id == device_info.device_id || 
-                               message.device_info.ip_address == device_info.ip_address {
-                                info!("Ignoring message from self: {} ({})", device_info.device_name, device_info.ip_address);
+                            if message.device_info.device_id == device_info.device_id {
+                                info!("Ignoring message from self (same device ID): {} ({})", device_info.device_name, device_info.ip_address);
+                                continue;
+                            }
+                            
+                            // Also ignore messages from the same IP (but different device ID) to avoid duplicate detection
+                            if message.device_info.ip_address == device_info.ip_address {
+                                info!("Ignoring message from same IP (different device ID): {} vs {} at {}", 
+                                      message.device_info.device_name, device_info.device_name, device_info.ip_address);
                                 continue;
                             }
 

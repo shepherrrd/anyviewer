@@ -201,6 +201,36 @@ async fn get_pending_connection_requests() -> Result<Vec<IncomingConnectionReque
 }
 
 #[tauri::command]
+async fn get_accepted_connection_requests() -> Result<Vec<serde_json::Value>, String> {
+    // This would return requests that have been accepted and need screen sharing to start
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
+    
+    // For now return empty array - this would be implemented to track accepted requests
+    // that are waiting for screen sharing to begin
+    let accepted_requests: Vec<serde_json::Value> = vec![];
+    
+    Ok(accepted_requests)
+}
+
+#[tauri::command]
+async fn start_screen_sharing_for_request(request_id: String) -> Result<(), String> {
+    info!("Starting screen sharing for request: {}", request_id);
+    
+    // Initialize screen capture and streaming
+    let capture_manager = ScreenCaptureManager::new().map_err(|e| e.to_string())?;
+    
+    // Start streaming manager
+    let streaming_manager = StreamingManager::new();
+    let _event_receiver = streaming_manager.initialize().await.map_err(|e| e.to_string())?;
+    
+    streaming_manager.start_streaming().await.map_err(|e| e.to_string())?;
+    
+    info!("Screen sharing started for request: {}", request_id);
+    Ok(())
+}
+
+#[tauri::command]
 async fn cancel_connection_request(request_id: String) -> Result<(), String> {
     info!("Cancelling connection request: {}", request_id);
     
@@ -1065,6 +1095,8 @@ async fn main() {
             create_connection_request,
             respond_to_connection_request,
             get_pending_connection_requests,
+            get_accepted_connection_requests,
+            start_screen_sharing_for_request,
             cancel_connection_request,
             start_network_discovery,
             stop_network_discovery,
