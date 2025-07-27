@@ -50,17 +50,22 @@ export default function Dashboard() {
         setSystemInfo(info);
         
         // Auto-start discovery after system info is loaded
-        const deviceName = info?.hostname || "Unknown Device";
+        const deviceName = (info as any)?.hostname || "Unknown Device";
         console.log("Auto-starting discovery for device:", deviceName);
         try {
+          console.log("Initializing connection request system...");
           await invoke("initialize_connection_requests"); // Initialize connection request system FIRST
+          console.log("Connection request system initialized");
+          
+          console.log("Starting network discovery...");
           await invoke("start_network_discovery", { deviceName });
           setDiscoveryActive(true);
           startDevicePolling();
           
           // Start polling for connection requests and accepted requests
-          const requestInterval = setInterval(checkForConnectionRequests, 2000);
-          const acceptedInterval = setInterval(checkForAcceptedRequests, 3000);
+          console.log("Starting polling for connection requests...");
+          setInterval(checkForConnectionRequests, 2000);
+          setInterval(checkForAcceptedRequests, 3000);
           
           console.log("Auto-discovery started successfully");
         } catch (error) {
@@ -192,10 +197,12 @@ export default function Dashboard() {
   const checkForConnectionRequests = async () => {
     try {
       const requests = await invoke("get_pending_connection_requests") as ConnectionRequest[];
+      console.log("Checking for connection requests, found:", requests.length);
       setIncomingRequests(requests);
       
       // Show the first pending request in modal if none is currently showing
       if (requests.length > 0 && !pendingRequest) {
+        console.log("Setting pending request:", requests[0]);
         setPendingRequest(requests[0]);
       }
       
@@ -254,6 +261,21 @@ export default function Dashboard() {
       console.log("Screen sharing started for request:", requestId);
     } catch (error) {
       console.error("Failed to start screen sharing:", error);
+    }
+  };
+
+  const testIncomingRequest = async () => {
+    try {
+      console.log("Creating test connection request...");
+      const requestId = await invoke("test_create_connection_request") as string;
+      console.log("Test request created:", requestId);
+      
+      // Force check for requests to pick up the new test request
+      setTimeout(() => {
+        checkForConnectionRequests();
+      }, 500);
+    } catch (error) {
+      console.error("Failed to create test request:", error);
     }
   };
 
@@ -345,23 +367,32 @@ export default function Dashboard() {
               <Radar className="w-5 h-5 mr-2" />
               Network Discovery
             </h2>
-            <button
-              onClick={discoveryActive ? stopDiscovery : startDiscovery}
-              disabled={discoveryLoading}
-              className={`btn-sm ${discoveryActive ? 'btn-secondary' : 'btn-primary'} flex items-center`}
-            >
-              {discoveryLoading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  {discoveryActive ? 'Stopping...' : 'Starting...'}
-                </>
-              ) : (
-                <>
-                  <Radar className={`w-4 h-4 mr-2 ${discoveryActive ? 'animate-pulse' : ''}`} />
-                  {discoveryActive ? 'Stop Discovery' : 'Start Discovery'}
-                </>
-              )}
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={testIncomingRequest}
+                className="btn-sm btn-secondary flex items-center"
+              >
+                <Bell className="w-4 h-4 mr-2" />
+                Test Request
+              </button>
+              <button
+                onClick={discoveryActive ? stopDiscovery : startDiscovery}
+                disabled={discoveryLoading}
+                className={`btn-sm ${discoveryActive ? 'btn-secondary' : 'btn-primary'} flex items-center`}
+              >
+                {discoveryLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    {discoveryActive ? 'Stopping...' : 'Starting...'}
+                  </>
+                ) : (
+                  <>
+                    <Radar className={`w-4 h-4 mr-2 ${discoveryActive ? 'animate-pulse' : ''}`} />
+                    {discoveryActive ? 'Stop Discovery' : 'Start Discovery'}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
         

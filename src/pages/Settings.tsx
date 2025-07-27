@@ -8,7 +8,7 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("general");
   const [launchMode, setLaunchMode] = useState<LaunchMode>("startup");
-  const [startMinimized, setStartMinimized] = useState(false);
+  const [, ] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
 

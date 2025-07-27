@@ -241,6 +241,28 @@ async fn cancel_connection_request(request_id: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn test_create_connection_request() -> Result<String, String> {
+    info!("Creating test connection request");
+    
+    let manager = get_global_network_manager().await;
+    let network_manager = manager.lock().await;
+    
+    let request_id = network_manager
+        .create_connection_request(
+            "test-device-123".to_string(),
+            "Test Windows PC".to_string(),
+            "192.168.1.100".to_string(),
+            vec!["screen_capture".to_string(), "input_forwarding".to_string()],
+            Some("Test connection request from Windows PC".to_string()),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    info!("Test connection request created with ID: {}", request_id);
+    Ok(request_id)
+}
+
 // Network discovery commands
 #[tauri::command]
 async fn start_network_discovery(device_name: String) -> Result<(), String> {
@@ -1098,6 +1120,7 @@ async fn main() {
             get_accepted_connection_requests,
             start_screen_sharing_for_request,
             cancel_connection_request,
+            test_create_connection_request,
             start_network_discovery,
             stop_network_discovery,
             get_discovered_devices,

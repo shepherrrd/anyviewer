@@ -258,8 +258,10 @@ impl NetworkDiscovery {
                             }
                             
                             // Also ignore messages from the same IP (but different device ID) to avoid duplicate detection
-                            if message.device_info.ip_address == device_info.ip_address {
-                                info!("Ignoring message from same IP (different device ID): {} vs {} at {}", 
+                            // But only if they have the same device name to avoid blocking legitimate different devices
+                            if message.device_info.ip_address == device_info.ip_address && 
+                               message.device_info.device_name == device_info.device_name {
+                                info!("Ignoring message from same IP and name: {} vs {} at {}", 
                                       message.device_info.device_name, device_info.device_name, device_info.ip_address);
                                 continue;
                             }
