@@ -23,6 +23,7 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
   const [screenPreview, setScreenPreview] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [isRealTimeCapture, setIsRealTimeCapture] = useState(false);
 
   const handleAccept = async () => {
     setResponding(true);
@@ -73,12 +74,19 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
     }
   };
 
-  const captureScreenPreview = async () => {
-    setLoadingPreview(true);
+  const captureScreenPreview = async (isInitialCapture = false) => {
+    if (isInitialCapture) {
+      setLoadingPreview(true);
+    }
     try {
       console.log("Capturing screen preview...");
       const screenData = await invoke("capture_screen") as number[];
       console.log("Screen data received, length:", screenData.length);
+      
+      // Clean up previous blob URL to prevent memory leaks
+      if (screenPreview) {
+        URL.revokeObjectURL(screenPreview);
+      }
       
       // Convert the array to Uint8Array
       const uint8Array = new Uint8Array(screenData);
@@ -94,15 +102,28 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
       // Set a placeholder image or error state
       setScreenPreview(null);
     } finally {
-      setLoadingPreview(false);
+      if (isInitialCapture) {
+        setLoadingPreview(false);
+      }
     }
   };
 
   const togglePreview = () => {
     if (!showPreview && !screenPreview) {
-      captureScreenPreview();
+      captureScreenPreview(true);
     }
     setShowPreview(!showPreview);
+  };
+
+  const startRealTimeCapture = () => {
+    setIsRealTimeCapture(true);
+    if (!screenPreview) {
+      captureScreenPreview(true);
+    }
+  };
+
+  const stopRealTimeCapture = () => {
+    setIsRealTimeCapture(false);
   };
 
   useEffect(() => {
@@ -113,6 +134,25 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
       }
     };
   }, [screenPreview]);
+
+  // Real-time capture effect
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    
+    if (isRealTimeCapture && showPreview) {
+      console.log("Starting real-time screen capture...");
+      intervalId = setInterval(() => {
+        captureScreenPreview(false); // Don't show loading for periodic updates
+      }, 1000); // Update every 1 second for real-time effect
+    }
+    
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        console.log("Stopped real-time screen capture");
+      }
+    };
+  }, [isRealTimeCapture, showPreview]);
 
   const formatPermissions = (permissions: string[]) => {
     const permissionLabels: { [key: string]: { label: string; icon: any } } = {
@@ -185,46 +225,74 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
                 <h4 className="text-sm font-medium text-gray-900 dark:text-white">
                   Screen Preview:
                 </h4>
-                <button
-                  onClick={togglePreview}
-                  disabled={loadingPreview}
-                  className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center"
-                >
-                  {loadingPreview ? (
-                    "Loading..."
-                  ) : showPreview ? (
-                    <>
-                      <EyeOff className="w-4 h-4 mr-1" />
-                      Hide Preview
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="w-4 h-4 mr-1" />
-                      Show Preview
-                    </>
+                <div className="flex items-center space-x-3">
+                  {showPreview && (
+                    <button
+                      onClick={isRealTimeCapture ? stopRealTimeCapture : startRealTimeCapture}
+                      className="text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 flex items-center px-2 py-1 bg-green-50 dark:bg-green-900/20 rounded"
+                    >
+                      {isRealTimeCapture ? (
+                        <>
+                          <div className="w-2 h-2 bg-red-500 rounded-full mr-1 animate-pulse"></div>
+                          Stop Live
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                          Start Live
+                        </>
+                      )}
+                    </button>
                   )}
-                </button>
+                  <button
+                    onClick={togglePreview}
+                    disabled={loadingPreview}
+                    className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center"
+                  >
+                    {loadingPreview ? (
+                      "Loading..."
+                    ) : showPreview ? (
+                      <>
+                        <EyeOff className="w-4 h-4 mr-1" />
+                        Hide Preview
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-4 h-4 mr-1" />
+                        Show Preview
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
               
               {showPreview && (
                 <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
                   {loadingPreview ? (
-                    <div className="w-full h-32 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                    <div className="w-full h-64 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                       <span className="ml-2 text-sm text-gray-500">Capturing...</span>
                     </div>
                   ) : screenPreview ? (
-                    <img
-                      src={screenPreview}
-                      alt="Screen preview"
-                      className="w-full h-32 object-cover"
-                      onError={() => {
-                        console.error("Failed to load screen preview image");
-                        setScreenPreview(null);
-                      }}
-                    />
+                    <div className="relative">
+                      <img
+                        src={screenPreview}
+                        alt="Screen preview"
+                        className="w-full h-64 object-contain bg-black"
+                        onError={() => {
+                          console.error("Failed to load screen preview image");
+                          setScreenPreview(null);
+                        }}
+                      />
+                      {isRealTimeCapture && (
+                        <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded flex items-center">
+                          <div className="w-2 h-2 bg-white rounded-full mr-1 animate-pulse"></div>
+                          LIVE
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    <div className="w-full h-32 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                    <div className="w-full h-64 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                       <div className="text-center">
                         <Monitor className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                         <p className="text-xs text-gray-500">Preview unavailable</p>
@@ -235,7 +303,7 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
               )}
               
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                This shows what the remote user will be able to see
+                This shows what the remote user will be able to see{isRealTimeCapture && " (Live updates every second)"}
               </p>
             </div>
           )}
