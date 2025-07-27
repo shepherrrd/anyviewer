@@ -143,12 +143,15 @@ impl ConnectionRequestManager {
     }
 
     pub async fn get_pending_requests(&self) -> Vec<IncomingConnectionRequest> {
-        self.pending_requests
+        let requests: Vec<IncomingConnectionRequest> = self.pending_requests
             .read()
             .await
             .values()
             .map(|pending| pending.request.clone())
-            .collect()
+            .collect();
+        
+        info!("📋 get_pending_requests called, returning {} requests", requests.len());
+        requests
     }
 
     pub async fn cancel_request(&self, request_id: &str) -> Result<()> {
@@ -166,6 +169,7 @@ impl ConnectionRequestManager {
         &self,
         request_data: crate::network::discovery::ConnectionRequestData,
     ) -> Result<()> {
+        info!("📨 CONNECTION REQUEST MANAGER: Handling incoming request: {:?}", request_data);
         let now = SystemTime::now();
 
         let request = IncomingConnectionRequest {
@@ -185,13 +189,17 @@ impl ConnectionRequestManager {
 
         // Store the pending request
         self.pending_requests.write().await.insert(request_data.request_id.clone(), pending_request);
+        let count = self.pending_requests.read().await.len();
+        info!("📨 Stored pending request. Total pending: {}", count);
 
         // Notify UI about new request
         if let Err(e) = self.request_updates_tx.send(request) {
-            warn!("Failed to send request update: {}", e);
+            warn!("❌ Failed to send request update to UI: {}", e);
+        } else {
+            info!("✅ Notified UI about new request");
         }
 
-        info!("Handled incoming connection request {} from {}", request_data.request_id, request_data.requester_name);
+        info!("✅ Successfully handled incoming connection request {} from {}", request_data.request_id, request_data.requester_name);
         Ok(())
     }
 

@@ -297,21 +297,23 @@ impl NetworkDiscovery {
                                     Self::add_discovered_device(&discovered_devices, message, addr).await;
                                 }
                                 MessageType::ConnectionRequest => {
-                                    info!("Received connection request from device: {}", message.device_info.device_name);
+                                    info!("🔔 RECEIVED CONNECTION REQUEST from device: {}", message.device_info.device_name);
                                     
                                     if let Some(request_data) = message.connection_request {
-                                        info!("Connection request details: {:?}", request_data);
+                                        info!("🔔 Connection request details: {:?}", request_data);
                                         
                                         // Forward the connection request to the connection request manager
                                         if let Some(ref tx) = connection_request_tx {
                                             if let Err(e) = tx.send(request_data) {
-                                                error!("Failed to forward connection request: {}", e);
+                                                error!("❌ Failed to forward connection request: {}", e);
                                             } else {
-                                                info!("Successfully forwarded connection request to manager");
+                                                info!("✅ Successfully forwarded connection request to manager");
                                             }
                                         } else {
-                                            warn!("Connection request received but no handler configured");
+                                            warn!("⚠️  Connection request received but no handler configured - this is the problem!");
                                         }
+                                    } else {
+                                        warn!("⚠️  Connection request message had no request data");
                                     }
                                 }
                                 MessageType::ConnectionResponse => {

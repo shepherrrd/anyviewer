@@ -57,6 +57,9 @@ export default function Dashboard() {
           await invoke("initialize_connection_requests"); // Initialize connection request system FIRST
           console.log("Connection request system initialized");
           
+          // Wait a bit to ensure the connection request system is fully ready
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
           console.log("Starting network discovery...");
           await invoke("start_network_discovery", { deviceName });
           setDiscoveryActive(true);
@@ -128,8 +131,17 @@ export default function Dashboard() {
   const startDiscovery = async () => {
     try {
       setDiscoveryLoading(true);
-      const deviceName = systemInfo?.hostname || "Unknown Device";
+      const deviceName = (systemInfo as any)?.hostname || "Unknown Device";
       console.log("Starting discovery for device:", deviceName);
+      
+      // Ensure connection request system is initialized
+      try {
+        await invoke("initialize_connection_requests");
+        console.log("Connection request system initialized");
+      } catch (error) {
+        console.log("Connection request system already initialized or error:", error);
+      }
+      
       await invoke("start_network_discovery", { deviceName });
       setDiscoveryActive(true);
       
@@ -374,6 +386,14 @@ export default function Dashboard() {
               >
                 <Bell className="w-4 h-4 mr-2" />
                 Test Request
+              </button>
+              <button
+                onClick={refreshDevices}
+                disabled={!discoveryActive}
+                className="btn-sm btn-secondary flex items-center"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
               </button>
               <button
                 onClick={discoveryActive ? stopDiscovery : startDiscovery}
