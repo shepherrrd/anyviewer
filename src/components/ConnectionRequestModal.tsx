@@ -76,14 +76,23 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
   const captureScreenPreview = async () => {
     setLoadingPreview(true);
     try {
+      console.log("Capturing screen preview...");
       const screenData = await invoke("capture_screen") as number[];
-      // Convert the array buffer to base64
+      console.log("Screen data received, length:", screenData.length);
+      
+      // Convert the array to Uint8Array
       const uint8Array = new Uint8Array(screenData);
+      
+      // Create blob from the raw image data
       const blob = new Blob([uint8Array], { type: "image/png" });
       const url = URL.createObjectURL(blob);
+      
+      console.log("Created blob URL:", url);
       setScreenPreview(url);
     } catch (error) {
       console.error("Failed to capture screen preview:", error);
+      // Set a placeholder image or error state
+      setScreenPreview(null);
     } finally {
       setLoadingPreview(false);
     }
@@ -199,15 +208,27 @@ export default function ConnectionRequestModal({ request, onClose, onResponse }:
               
               {showPreview && (
                 <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
-                  {screenPreview ? (
+                  {loadingPreview ? (
+                    <div className="w-full h-32 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                      <span className="ml-2 text-sm text-gray-500">Capturing...</span>
+                    </div>
+                  ) : screenPreview ? (
                     <img
                       src={screenPreview}
                       alt="Screen preview"
                       className="w-full h-32 object-cover"
+                      onError={() => {
+                        console.error("Failed to load screen preview image");
+                        setScreenPreview(null);
+                      }}
                     />
                   ) : (
                     <div className="w-full h-32 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                      <Monitor className="w-8 h-8 text-gray-400" />
+                      <div className="text-center">
+                        <Monitor className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-xs text-gray-500">Preview unavailable</p>
+                      </div>
                     </div>
                   )}
                 </div>

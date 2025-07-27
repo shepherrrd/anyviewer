@@ -291,6 +291,18 @@ export default function Dashboard() {
     }
   };
 
+  const testUdpBroadcast = async () => {
+    try {
+      console.log("Testing UDP broadcast reception...");
+      const result = await invoke("test_udp_broadcast") as string;
+      console.log("UDP test result:", result);
+      alert(result);
+    } catch (error) {
+      console.error("Failed to test UDP broadcast:", error);
+      alert("UDP test failed: " + error);
+    }
+  };
+
   useEffect(() => {
     let cleanup: (() => void) | undefined;
     if (discoveryActive) {
@@ -386,6 +398,13 @@ export default function Dashboard() {
               >
                 <Bell className="w-4 h-4 mr-2" />
                 Test Request
+              </button>
+              <button
+                onClick={testUdpBroadcast}
+                className="btn-sm btn-secondary flex items-center"
+              >
+                <Wifi className="w-4 h-4 mr-2" />
+                Test UDP
               </button>
               <button
                 onClick={refreshDevices}

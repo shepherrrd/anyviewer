@@ -1,7 +1,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use log::{info, error, debug};
+use log::{info, error, debug, warn};
 use tauri::{CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
 
 // Import modules
@@ -261,6 +261,44 @@ async fn test_create_connection_request() -> Result<String, String> {
     
     info!("Test connection request created with ID: {}", request_id);
     Ok(request_id)
+}
+
+#[tauri::command]
+async fn test_udp_broadcast() -> Result<String, String> {
+    use std::net::UdpSocket;
+    
+    info!("Testing UDP broadcast functionality");
+    
+    // Instead of trying to bind to 7879 (which discovery service already uses),
+    // let's test broadcasting capability using ephemeral port
+    
+    match UdpSocket::bind("0.0.0.0:0") {
+        Ok(test_socket) => {
+            if let Err(e) = test_socket.set_broadcast(true) {
+                return Ok(format!("❌ Failed to enable broadcast: {}", e));
+            }
+            
+            // Create a test discovery message
+            let test_message = "TEST_BROADCAST_FROM_ANYVIEWER";
+            let broadcast_addr = "255.255.255.255:7879";
+            
+            match test_socket.send_to(test_message.as_bytes(), broadcast_addr) {
+                Ok(_) => {
+                    let result = format!("✅ UDP Test successful!\n📡 Test broadcast sent successfully to {}\n🔍 Discovery service should be running on port 7879", broadcast_addr);
+                    info!("{}", result);
+                    Ok(result)
+                }
+                Err(e) => {
+                    let result = format!("⚠️  Failed to send test broadcast: {}", e);
+                    warn!("{}", result);
+                    Ok(result)
+                }
+            }
+        }
+        Err(e) => {
+            Ok(format!("❌ Failed to create test socket: {}", e))
+        }
+    }
 }
 
 // Network discovery commands
@@ -1121,6 +1159,7 @@ async fn main() {
             start_screen_sharing_for_request,
             cancel_connection_request,
             test_create_connection_request,
+            test_udp_broadcast,
             start_network_discovery,
             stop_network_discovery,
             get_discovered_devices,
